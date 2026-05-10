@@ -1,16 +1,21 @@
-"""BBC Daily KO — Streamlit 뷰어 (on-demand 본문 번역 포함)."""
+"""BBC Daily KO — Streamlit 뷰어 (on-demand 본문 번역 + 수동 새로고침)."""
 from __future__ import annotations
 import json
 import re
+import subprocess
+import sys
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent / ".env")
+PROJECT_DIR = Path(__file__).parent
+load_dotenv(PROJECT_DIR / ".env")
 
 from translate import translate_article
 
-REPORTS_DIR = Path(__file__).parent / "reports"
+REPORTS_DIR = PROJECT_DIR / "reports"
+KST = timezone(timedelta(hours=9))
 
 st.set_page_config(page_title="BBC Daily KO", page_icon="📰", layout="wide")
 
@@ -29,12 +34,16 @@ def list_dates() -> list[str]:
     files = sorted(REPORTS_DIR.glob("*.json"), reverse=True)
     return [f.stem for f in files if re.fullmatch(r"\d{4}-\d{2}-\d{2}", f.stem)]
 
-@st.cache_data(ttl=60, show_spinner=False)
-def load_items(date: str) -> list[dict]:
+@st.cache_data(ttl=30, show_spinner=False)
+def load_report(date: str) -> dict:
+    """{items, last_update, last_new_count} (구포맷 list도 호환)."""
     p = REPORTS_DIR / f"{date}.json"
     if not p.exists():
-        return []
-    return json.loads(p.read_text(encoding="utf-8"))
+        return {"items": [], "last_update": None, "last_new_count": 0}
+    data = json.loads(p.read_text(encoding="utf-8"))
+    if isinstance(data, dict):
+        return data
+    return {"items": data, "last_update": None, "last_new_count": 0}
 
 # ── 사이드바 ───────────────────────────────────────────────
 dates = list_dates()
@@ -43,36 +52,86 @@ default_date = qp.get("date", dates[0] if dates else None)
 
 with st.sidebar:
     st.title("📰 BBC Daily KO")
-    st.caption("BBC 뉴스 한국어 다이제스트")
+    st.caption("BBC 뉴스 한국어 다이제스트 · 30분 갱신")
+
     if not dates:
-        st.warning("아직 리포트 없음.\n`python main.py` 실행 후 새로고침.")
-        st.stop()
+        st.warning("아직 리포트 없음.\n사이드바의 `🔄 지금 갱신` 클릭하거나\n`python main.py` 실행 후 새로고침.")
 
-    selected = st.selectbox(
-        "📅 날짜",
-        dates,
-        index=dates.index(default_date) if default_date in dates else 0,
-    )
-    st.query_params["date"] = selected
-
-    st.divider()
-    items_for_count = load_items(selected)
-    st.markdown(f"**선택일 기사**: {len(items_for_count)}건")
-    st.markdown(f"**전체 리포트**: {len(dates)}일치")
-    st.markdown(f"**최신**: `{dates[0]}`")
+    if dates:
+        selected = st.selectbox(
+            "📅 날짜",
+            dates,
+            index=dates.index(default_date) if default_date in dates else 0,
+        )
+        st.query_params["date"] = selected
+    else:
+        selected = datetime.now(KST).strftime("%Y-%m-%d")
 
     st.divider()
-    st.markdown("**기사 카드의 `📖 한글 본문 번역` 버튼**을 누르면 gemini가 BBC 원문을 한국어로 번역합니다 (캐시됨).")
-    st.markdown("**소스**: [BBC News](https://www.bbc.com/news)")
+
+    # ── 수동 새로고침 ─────────────────────────────────
+    if st.button("🔄 지금 갱신", use_container_width=True, type="primary"):
+        with st.spinner("BBC RSS 수집 + Gemini 요약 중... (~1분)\n신규 없으면 즉시 끝남."):
+            try:
+                proc = subprocess.run(
+                    [sys.executable, str(PROJECT_DIR / "main.py"), "--no-push"],
+                    cwd=str(PROJECT_DIR),
+                    capture_output=True, text=True, timeout=300,
+                )
+                if proc.returncode == 0:
+                    st.cache_data.clear()
+                    last_line = (proc.stdout.strip().splitlines() or ["완료"])[-1]
+                    st.success(last_line)
+                    st.rerun()
+                else:
+                    st.error(f"갱신 실패 (rc={proc.returncode})\n{proc.stderr[-200:]}")
+            except subprocess.TimeoutExpired:
+                st.error("갱신 타임아웃 (5분 초과)")
+
+    if dates:
+        report = load_report(selected)
+        items_for_count = report["items"]
+        last_update = report.get("last_update")
+        last_new = report.get("last_new_count", 0)
+
+        st.markdown(f"**선택일 기사**: {len(items_for_count)}건")
+        if last_update:
+            try:
+                dt = datetime.fromisoformat(last_update)
+                st.markdown(f"**마지막 갱신**: `{dt.strftime('%H:%M:%S')}` KST")
+            except Exception:
+                pass
+        if last_new is not None:
+            st.markdown(f"**직전 회차 신규**: {last_new}건")
+        st.markdown(f"**전체 리포트**: {len(dates)}일치")
+
+    st.divider()
+    st.caption("ℹ️ 매 30분 자동 갱신 · KST 22~06시 텔레그램 알림 끔")
+    st.caption("기사 카드의 `📖 한글 본문 번역` 버튼 → gemini가 BBC 원문을 한국어로 번역 (캐시됨)")
+    st.caption("출처: [BBC News](https://www.bbc.com/news)")
 
 # ── 메인 ───────────────────────────────────────────────────
-items = load_items(selected)
+if not dates:
+    st.info("리포트가 아직 없습니다. 사이드바의 `🔄 지금 갱신` 버튼을 눌러주세요.")
+    st.stop()
+
+report = load_report(selected)
+items = report["items"]
 if not items:
     st.error(f"`{selected}.json` 데이터가 없습니다.")
     st.stop()
 
+last_update = report.get("last_update")
+ts_caption = ""
+if last_update:
+    try:
+        dt = datetime.fromisoformat(last_update)
+        ts_caption = f"  ·  마지막 갱신: {dt.strftime('%H:%M')} KST"
+    except Exception:
+        pass
+
 st.title(f"BBC 데일리 리포트 — {selected}")
-st.caption(f"📊 총 {len(items)}건  ·  출처: BBC News")
+st.caption(f"📊 총 {len(items)}건{ts_caption}  ·  출처: BBC News")
 
 # 카테고리별 그룹핑
 by_cat: dict[str, list[dict]] = {}
@@ -116,4 +175,4 @@ for tab, cat in zip(tabs, cat_order):
 
             st.divider()
 
-st.caption(f"리포트 생성: {selected}  ·  매일 KST 08:00 (cron on EC2)")
+st.caption(f"리포트 날짜: {selected}  ·  자동 갱신 30분  ·  KST 22~06시 알림 OFF")
