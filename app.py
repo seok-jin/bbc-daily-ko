@@ -141,38 +141,44 @@ for it in items:
 cat_order = [c for c in CAT_LABEL if c in by_cat]
 tabs = st.tabs([f"{CAT_LABEL[c]} ({len(by_cat[c])})" for c in cat_order])
 
+@st.fragment
+def render_article_card(it: dict, idx: int, cat: str):
+    """단일 기사 카드 — fragment로 격리되어 번역 중에도 다른 카드/탭 사용 가능."""
+    st.subheader(f"{idx}. {it['ko_title']}")
+    for line in it["ko_summary"].split("\n"):
+        line = line.strip().lstrip("-•·").strip()
+        if line:
+            st.markdown(f"- {line}")
+    st.caption(f"_원문 제목: {it['title']}_")
+
+    url = it["link"]
+    btn_key = f"trans_{cat}_{idx}_{hash(url) & 0xffffff}"
+    state_key = f"shown_{btn_key}"
+
+    cols = st.columns([1, 1, 4])
+    cols[0].link_button("🔗 원문 보기", url, use_container_width=True)
+    if cols[1].button("📖 한글 본문 번역", key=btn_key, use_container_width=True):
+        st.session_state[state_key] = True
+        st.rerun(scope="fragment")
+
+    if st.session_state.get(state_key):
+        with st.spinner("gemini가 본문을 번역 중... (최초 1회만, 다음부터는 캐시)"):
+            try:
+                text, cached = translate_article(url, it["title"])
+                with st.container(border=True):
+                    if cached:
+                        st.caption("💾 캐시에서 즉시 로드")
+                    else:
+                        st.caption("✨ 새로 번역됨 (다음부터는 캐시)")
+                    st.markdown(text)
+            except Exception as e:
+                st.error(f"번역 실패: {e}")
+
+    st.divider()
+
 for tab, cat in zip(tabs, cat_order):
     with tab:
         for idx, it in enumerate(by_cat[cat], 1):
-            st.subheader(f"{idx}. {it['ko_title']}")
-            for line in it["ko_summary"].split("\n"):
-                line = line.strip().lstrip("-•·").strip()
-                if line:
-                    st.markdown(f"- {line}")
-            st.caption(f"_원문 제목: {it['title']}_")
-
-            cols = st.columns([1, 1, 4])
-            cols[0].link_button("🔗 원문 보기", it["link"], use_container_width=True)
-
-            url = it["link"]
-            btn_key = f"trans_{cat}_{idx}_{hash(url) & 0xffffff}"
-            state_key = f"shown_{btn_key}"
-            if cols[1].button("📖 한글 본문 번역", key=btn_key, use_container_width=True):
-                st.session_state[state_key] = True
-
-            if st.session_state.get(state_key):
-                with st.spinner("gemini가 본문을 번역 중... (최초 1회만, 다음부터는 캐시)"):
-                    try:
-                        text, cached = translate_article(url, it["title"])
-                        with st.container(border=True):
-                            if cached:
-                                st.caption("💾 캐시에서 즉시 로드")
-                            else:
-                                st.caption("✨ 새로 번역됨 (다음부터는 캐시)")
-                            st.markdown(text)
-                    except Exception as e:
-                        st.error(f"번역 실패: {e}")
-
-            st.divider()
+            render_article_card(it, idx, cat)
 
 st.caption(f"리포트 날짜: {selected}  ·  자동 갱신 30분  ·  KST 22~06시 알림 OFF")
