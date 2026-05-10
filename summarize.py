@@ -90,6 +90,16 @@ def summarize_batch(batch: list[Article], mode: str = "summary",
         raise ValueError(f"size mismatch: got {len(arr)}, expected {len(batch)}")
     return arr
 
+def _try_batch(batch, mode, bodies_batch):
+    """1회 재시도 포함 batch 호출."""
+    import time as _t
+    try:
+        return summarize_batch(batch, mode=mode, bodies=bodies_batch)
+    except Exception as e1:
+        print(f"  ! 1st try failed ({type(e1).__name__}): {str(e1)[:120]}; 5초 대기 후 재시도", flush=True)
+        _t.sleep(5)
+        return summarize_batch(batch, mode=mode, bodies=bodies_batch)
+
 def summarize_all(articles: list[Article], mode: str = "summary",
                   bodies: list[str] | None = None) -> list[dict]:
     bs = BATCH_SIZE_FULL if mode == "full" else BATCH_SIZE
@@ -99,10 +109,19 @@ def summarize_all(articles: list[Article], mode: str = "summary",
         bodies_batch = bodies[i:i+bs] if bodies else None
         print(f"  batch {i//bs + 1}: {len(batch)} articles ({mode})...", flush=True)
         try:
-            arr = summarize_batch(batch, mode=mode, bodies=bodies_batch)
+            arr = _try_batch(batch, mode, bodies_batch)
         except Exception as e:
-            print(f"  ! batch failed ({e}); falling back to titles only", flush=True)
-            arr = [{"ko_title": a.title, "ko_summary": "(요약 실패)"} for a in batch]
+            # 배치 재시도까지 실패 → 1건씩 분할 호출
+            print(f"  ! batch 재시도 실패 ({e}); 1건씩 분할 처리", flush=True)
+            arr = []
+            for j, art in enumerate(batch):
+                single_body = [bodies_batch[j]] if bodies_batch else None
+                try:
+                    one = _try_batch([art], mode, single_body)
+                    arr.append(one[0])
+                except Exception as e2:
+                    print(f"    · 단건 실패 [{art.title[:40]}]: {e2}", flush=True)
+                    arr.append({"ko_title": art.title, "ko_summary": "(요약 실패)"})
         for a, k in zip(batch, arr):
             results.append({**asdict(a), **k})
     return results

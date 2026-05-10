@@ -45,8 +45,12 @@ def _load_existing(json_path: Path) -> tuple[list[dict], str | None]:
         return data.get("items", []), data.get("last_update")
     return data, None  # 구 포맷 (list)
 
+def _is_failed(it: dict) -> bool:
+    """요약 실패 항목 — 재시도 대상 (dedupe pool에서 제외)."""
+    return "(요약 실패)" in (it.get("ko_summary") or "")
+
 def _recent_links(reports_dir: Path, days: int = DEDUPE_WINDOW_DAYS) -> set[str]:
-    """최근 N일치 JSON에서 본 적 있는 모든 link 집합."""
+    """최근 N일치 JSON에서 본 적 있는 모든 link 집합 (실패 항목은 제외)."""
     cutoff = datetime.now(KST).date() - timedelta(days=days)
     links: set[str] = set()
     for jp in reports_dir.glob("*.json"):
@@ -62,7 +66,7 @@ def _recent_links(reports_dir: Path, days: int = DEDUPE_WINDOW_DAYS) -> set[str]
             continue
         items = data.get("items", []) if isinstance(data, dict) else data
         for it in items:
-            if "link" in it:
+            if "link" in it and not _is_failed(it):
                 links.add(it["link"])
     return links
 
@@ -111,8 +115,13 @@ def main() -> int:
     new_items = summarize_all(new_arts, mode=mode, bodies=bodies)
     print(f"      → 신규 {len(new_items)}건 처리 완료 ({time.time()-t0:.1f}s)", flush=True)
 
-    # 병합: 신규를 앞에, 기존을 뒤에 (카테고리별로 newest-first)
-    merged = new_items + existing_items
+    # 병합: 실패 항목은 기존에서 제거하고 새로 처리된 결과로 교체
+    new_links = {it["link"] for it in new_items}
+    existing_cleaned = [
+        it for it in existing_items
+        if not (_is_failed(it) and it["link"] in new_links)
+    ]
+    merged = new_items + existing_cleaned
 
     print("[4/4] Markdown + JSON 리포트 생성...", flush=True)
     render(merged, REPORTS_DIR)
