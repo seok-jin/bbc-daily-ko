@@ -53,9 +53,17 @@ def main() -> int:
     items = summarize_all(arts, mode=mode, bodies=bodies)
     print(f"      → {len(items)}건 완료 ({time.time()-t0:.1f}s)", flush=True)
 
-    print("[4/4] Markdown 리포트 생성...", flush=True)
+    print("[4/4] Markdown + JSON 리포트 생성...", flush=True)
     path = render(items, REPORTS_DIR)
+    # JSON 사이드카 (Streamlit on-demand 번역에서 사용)
+    import json as _json
+    json_path = path.with_suffix(".json")
+    json_path.write_text(
+        _json.dumps(items, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(f"      → {path}", flush=True)
+    print(f"      → {json_path}", flush=True)
 
     if not args.no_push:
         print("[+] 푸시...", flush=True)
