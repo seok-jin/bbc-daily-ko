@@ -46,7 +46,7 @@ def _load_existing(json_path: Path) -> tuple[list[dict], str | None]:
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--full", action="store_true", help="본문 스크래핑 + 전체 번역")
-    p.add_argument("--per", type=int, default=10, help="카테고리당 기사 수")
+    p.add_argument("--per", type=int, default=6, help="카테고리당 기사 수 (16카테고리 × 6 = 최대 96건/회)")
     p.add_argument("--no-push", action="store_true", help="Telegram/이메일 푸시 끄기")
     args = p.parse_args()
     mode = "full" if args.full else "summary"

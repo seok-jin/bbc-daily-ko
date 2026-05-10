@@ -1,16 +1,13 @@
 """요약된 기사 리스트 → 일일 Markdown 리포트."""
 from __future__ import annotations
+import re
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
+from fetch import CATEGORIES
 
-CAT_KO = {
-    "World": "🌍 세계",
-    "Business": "💼 비즈니스",
-    "Technology": "💻 테크",
-    "Science": "🔬 과학·환경",
-    "Health": "🏥 헬스",
-}
+def _slug(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 def render(items: list[dict], out_dir: Path) -> Path:
     today = datetime.now().strftime("%Y-%m-%d")
@@ -26,16 +23,24 @@ def render(items: list[dict], out_dir: Path) -> Path:
     lines.append("")
     lines.append(f"_총 {len(items)}건 · 출처: BBC News_")
     lines.append("")
-    lines.append("## 목차")
-    for cat in CAT_KO:
-        if cat in grouped:
-            lines.append(f"- [{CAT_KO[cat]}](#{cat.lower()})  ({len(grouped[cat])}건)")
+
+    # 그룹별 목차
+    topic_cats = [c for c in CATEGORIES if CATEGORIES[c]["group"] == "topic" and c in grouped]
+    region_cats = [c for c in CATEGORIES if CATEGORIES[c]["group"] == "region" and c in grouped]
+    if topic_cats:
+        lines.append("### 📚 토픽")
+        for c in topic_cats:
+            lines.append(f"- [{CATEGORIES[c]['label']}](#{_slug(c)})  ({len(grouped[c])}건)")
+    if region_cats:
+        lines.append("")
+        lines.append("### 🌐 지역")
+        for c in region_cats:
+            lines.append(f"- [{CATEGORIES[c]['label']}](#{_slug(c)})  ({len(grouped[c])}건)")
     lines.append("")
 
-    for cat, label in CAT_KO.items():
-        if cat not in grouped:
-            continue
-        lines.append(f"## {label} <a id='{cat.lower()}'></a>")
+    for cat in topic_cats + region_cats:
+        label = CATEGORIES[cat]["label"]
+        lines.append(f"## {label} <a id='{_slug(cat)}'></a>")
         lines.append("")
         for idx, it in enumerate(grouped[cat], 1):
             lines.append(f"### {idx}. {it['ko_title']}")

@@ -13,19 +13,14 @@ PROJECT_DIR = Path(__file__).parent
 load_dotenv(PROJECT_DIR / ".env")
 
 from translate import translate_article
+from fetch import CATEGORIES
 
 REPORTS_DIR = PROJECT_DIR / "reports"
 KST = timezone(timedelta(hours=9))
 
 st.set_page_config(page_title="BBC Daily KO", page_icon="📰", layout="wide")
 
-CAT_LABEL = {
-    "World": "🌍 세계",
-    "Business": "💼 비즈니스",
-    "Technology": "💻 테크",
-    "Science": "🔬 과학·환경",
-    "Health": "🏥 헬스",
-}
+CAT_LABEL = {name: meta["label"] for name, meta in CATEGORIES.items()}
 
 # ── 데이터 로드 ────────────────────────────────────────────
 def list_dates() -> list[str]:
@@ -138,7 +133,24 @@ by_cat: dict[str, list[dict]] = {}
 for it in items:
     by_cat.setdefault(it["category"], []).append(it)
 
-cat_order = [c for c in CAT_LABEL if c in by_cat]
+# 그룹 선택 (📚 토픽 / 🌐 지역)
+group_choice = st.radio(
+    "분류",
+    ["📚 토픽", "🌐 지역"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="group_radio",
+)
+group_key = "topic" if "토픽" in group_choice else "region"
+
+cat_order = [
+    c for c in CATEGORIES
+    if CATEGORIES[c]["group"] == group_key and c in by_cat
+]
+if not cat_order:
+    st.info(f"이 그룹에 해당하는 기사가 아직 없습니다. 사이드바의 `🔄 지금 갱신` 클릭해보세요.")
+    st.stop()
+
 tabs = st.tabs([f"{CAT_LABEL[c]} ({len(by_cat[c])})" for c in cat_order])
 
 @st.fragment
