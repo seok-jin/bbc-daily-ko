@@ -155,10 +155,12 @@ def render_article_card(it: dict, idx: int, cat: str):
     btn_key = f"trans_{cat}_{idx}_{hash(url) & 0xffffff}"
     state_key = f"shown_{btn_key}"
 
+    shown = st.session_state.get(state_key, False)
+    btn_label = "📕 한글 본문 닫기" if shown else "📖 한글 본문 번역"
     cols = st.columns([1, 1, 4])
     cols[0].link_button("🔗 원문 보기", url, use_container_width=True)
-    if cols[1].button("📖 한글 본문 번역", key=btn_key, use_container_width=True):
-        st.session_state[state_key] = True
+    if cols[1].button(btn_label, key=btn_key, use_container_width=True):
+        st.session_state[state_key] = not shown
         st.rerun(scope="fragment")
 
     if st.session_state.get(state_key):
