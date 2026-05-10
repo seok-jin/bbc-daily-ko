@@ -9,7 +9,8 @@ import json, os, re, subprocess, sys
 from dataclasses import asdict
 from fetch import Article
 
-BACKEND = os.environ.get("BBC_AI_BACKEND", "claude")  # claude | gemini
+def _backend() -> str:
+    return os.environ.get("BBC_AI_BACKEND", "claude")  # claude | gemini
 BATCH_SIZE = 6           # summary 모드
 BATCH_SIZE_FULL = 2      # full 번역 모드 (긴 본문)
 TIMEOUT = 240
@@ -52,9 +53,9 @@ PROMPT_FULL = """다음 BBC 영어 기사들의 본문(body 필드, 없으면 su
 """
 
 def _call_ai(prompt: str, timeout: int = TIMEOUT) -> str:
-    if BACKEND not in BACKEND_CMD:
-        raise ValueError(f"unknown BBC_AI_BACKEND: {BACKEND}")
-    cmd = BACKEND_CMD[BACKEND]
+    if _backend() not in BACKEND_CMD:
+        raise ValueError(f"unknown BBC_AI_BACKEND: {_backend()}")
+    cmd = BACKEND_CMD[_backend()]
     use_shell = (os.name == "nt")  # Windows .cmd shims
     proc = subprocess.run(
         cmd if not use_shell else " ".join(cmd),
@@ -63,7 +64,7 @@ def _call_ai(prompt: str, timeout: int = TIMEOUT) -> str:
         timeout=timeout, shell=use_shell,
     )
     if proc.returncode != 0:
-        raise RuntimeError(f"{BACKEND} CLI failed (rc={proc.returncode}): {proc.stderr.strip()[:300]}")
+        raise RuntimeError(f"{_backend()} CLI failed (rc={proc.returncode}): {proc.stderr.strip()[:300]}")
     return proc.stdout
 
 def _extract_json_array(text: str):
