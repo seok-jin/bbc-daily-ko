@@ -118,7 +118,8 @@ with st.sidebar:
     search_q = st.text_input("🔍 검색", placeholder="제목/요약 키워드", key="search_q").strip()
 
     # ── 읽은 글 숨김 ──
-    hide_read = st.checkbox("✓ 읽은 글 숨기기", value=True, key="hide_read")
+    hide_read = st.checkbox("✓ 읽은 글 숨기기", value=False, key="hide_read",
+                            help="OFF: 읽음 표시한 글도 회색으로 표시  ·  ON: 읽음 표시한 글 숨김")
 
     # ── 키워드 알림 상태 ──
     wk = os.environ.get("WATCHED_KEYWORDS", "").strip()
@@ -226,10 +227,9 @@ def render_article_card(it: dict, idx: int, cat: str):
         st.rerun(scope="fragment")
     if cols[2].button(read_label, key=f"{btn_key}_read", use_container_width=True):
         state.toggle_read(h)
-        if not read and st.session_state.get("hide_read", True):
-            st.rerun()  # 카드 즉시 사라지도록 풀 리런
-        else:
-            st.rerun(scope="fragment")
+        # fragment 리런만 — 풀 리런 하면 st.tabs가 톱스토리로 리셋됨
+        # 읽음 처리하면 카드가 회색 처리됨. 사이드바 '읽은 글 숨기기' ON이면 다음 페이지 갱신 때 사라짐
+        st.rerun(scope="fragment")
     if cols[3].button(star_label, key=f"{btn_key}_star", use_container_width=True):
         state.toggle_starred(h)
         st.rerun(scope="fragment")
@@ -250,7 +250,7 @@ def render_article_card(it: dict, idx: int, cat: str):
     st.divider()
 
 def _filter_read(items: list[dict]) -> list[dict]:
-    if not st.session_state.get("hide_read", True):
+    if not st.session_state.get("hide_read", False):
         return items
     return [it for it in items if not state.is_read(link_hash(it["link"]))]
 
