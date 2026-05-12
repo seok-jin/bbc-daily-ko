@@ -1,36 +1,63 @@
-"""BBC RSS feeds → article metadata.
+"""BBC + 외부 매체 RSS feeds → article metadata.
 
-토픽 8개 + 지역 8개 = 16카테고리.
+CATEGORIES: 카테고리 메타 (group, label) — 화면 표시용
+FEEDS: 실제 RSS URL 리스트 — 한 카테고리에 여러 source 가능 (예: World = BBC + Guardian + Al Jazeera)
 """
 from __future__ import annotations
 import feedparser
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 
-# (name, group, label, url)
-FEEDS_META: list[tuple[str, str, str, str]] = [
-    # ── 토픽 ──
-    ("Top Stories",   "topic",  "📰 톱스토리",     "https://feeds.bbci.co.uk/news/rss.xml"),
-    ("World",         "topic",  "🌍 세계",         "https://feeds.bbci.co.uk/news/world/rss.xml"),
-    ("Business",      "topic",  "💼 비즈니스",     "https://feeds.bbci.co.uk/news/business/rss.xml"),
-    ("Technology",    "topic",  "💻 테크",         "https://feeds.bbci.co.uk/news/technology/rss.xml"),
-    ("Science",       "topic",  "🔬 과학·환경",    "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"),
-    ("Health",        "topic",  "🏥 헬스",         "https://feeds.bbci.co.uk/news/health/rss.xml"),
-    ("Politics",      "topic",  "🗳️ 정치",         "https://feeds.bbci.co.uk/news/politics/rss.xml"),
-    ("Entertainment", "topic",  "🎭 엔터·문화",    "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml"),
-    # ── 지역 ──
-    ("US & Canada",   "region", "🇺🇸 미주",         "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml"),
-    ("UK",            "region", "🇬🇧 영국",         "https://feeds.bbci.co.uk/news/uk/rss.xml"),
-    ("Europe",        "region", "🇪🇺 유럽",         "https://feeds.bbci.co.uk/news/world/europe/rss.xml"),
-    ("Asia",          "region", "🌏 아시아",        "https://feeds.bbci.co.uk/news/world/asia/rss.xml"),
-    ("Australia",     "region", "🇦🇺 호주",         "https://feeds.bbci.co.uk/news/world/australia/rss.xml"),
-    ("Africa",        "region", "🌍 아프리카",      "https://feeds.bbci.co.uk/news/world/africa/rss.xml"),
-    ("Latin America", "region", "🌎 라틴아메리카",  "https://feeds.bbci.co.uk/news/world/latin_america/rss.xml"),
-    ("Middle East",   "region", "🕌 중동",          "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml"),
-]
-
+# ── 카테고리 메타 (8 topics + 8 regions) ──
 CATEGORIES: dict[str, dict] = {
-    name: {"group": g, "label": l, "url": u} for name, g, l, u in FEEDS_META
+    # 토픽
+    "Top Stories":   {"group": "topic",  "label": "📰 톱스토리"},
+    "World":         {"group": "topic",  "label": "🌍 세계"},
+    "Business":      {"group": "topic",  "label": "💼 비즈니스"},
+    "Technology":    {"group": "topic",  "label": "💻 테크"},
+    "Science":       {"group": "topic",  "label": "🔬 과학·환경"},
+    "Health":        {"group": "topic",  "label": "🏥 헬스"},
+    "Politics":      {"group": "topic",  "label": "🗳️ 정치"},
+    "Entertainment": {"group": "topic",  "label": "🎭 엔터·문화"},
+    # 지역
+    "US & Canada":   {"group": "region", "label": "🇺🇸 미주"},
+    "UK":            {"group": "region", "label": "🇬🇧 영국"},
+    "Europe":        {"group": "region", "label": "🇪🇺 유럽"},
+    "Asia":          {"group": "region", "label": "🌏 아시아"},
+    "Australia":     {"group": "region", "label": "🇦🇺 호주"},
+    "Africa":        {"group": "region", "label": "🌍 아프리카"},
+    "Latin America": {"group": "region", "label": "🌎 라틴아메리카"},
+    "Middle East":   {"group": "region", "label": "🕌 중동"},
 }
+
+# ── 실제 RSS 피드 (한 카테고리에 다중 출처 OK) ──
+# (category, source, url)
+FEEDS: list[tuple[str, str, str]] = [
+    # 토픽 — BBC
+    ("Top Stories",   "BBC",        "https://feeds.bbci.co.uk/news/rss.xml"),
+    ("World",         "BBC",        "https://feeds.bbci.co.uk/news/world/rss.xml"),
+    ("Business",      "BBC",        "https://feeds.bbci.co.uk/news/business/rss.xml"),
+    ("Technology",    "BBC",        "https://feeds.bbci.co.uk/news/technology/rss.xml"),
+    ("Science",       "BBC",        "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"),
+    ("Health",        "BBC",        "https://feeds.bbci.co.uk/news/health/rss.xml"),
+    ("Politics",      "BBC",        "https://feeds.bbci.co.uk/news/politics/rss.xml"),
+    ("Entertainment", "BBC",        "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml"),
+    # 토픽 — World 강화
+    ("World",         "Guardian",   "https://www.theguardian.com/world/rss"),
+    ("World",         "Al Jazeera", "https://www.aljazeera.com/xml/rss/all.xml"),
+    # 토픽 — Tech 강화
+    ("Technology",    "TechCrunch", "https://techcrunch.com/feed/"),
+    ("Technology",    "The Verge",  "https://www.theverge.com/rss/index.xml"),
+    ("Technology",    "Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"),
+    # 지역 — BBC
+    ("US & Canada",   "BBC",        "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml"),
+    ("UK",            "BBC",        "https://feeds.bbci.co.uk/news/uk/rss.xml"),
+    ("Europe",        "BBC",        "https://feeds.bbci.co.uk/news/world/europe/rss.xml"),
+    ("Asia",          "BBC",        "https://feeds.bbci.co.uk/news/world/asia/rss.xml"),
+    ("Australia",     "BBC",        "https://feeds.bbci.co.uk/news/world/australia/rss.xml"),
+    ("Africa",        "BBC",        "https://feeds.bbci.co.uk/news/world/africa/rss.xml"),
+    ("Latin America", "BBC",        "https://feeds.bbci.co.uk/news/world/latin_america/rss.xml"),
+    ("Middle East",   "BBC",        "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml"),
+]
 
 @dataclass
 class Article:
@@ -39,18 +66,20 @@ class Article:
     summary: str
     link: str
     published: str
+    source: str = "BBC"  # default for legacy compat
 
 def fetch_all(per_category: int = 6) -> list[Article]:
     out: list[Article] = []
-    for name, _grp, _lbl, url in FEEDS_META:
+    for category, source, url in FEEDS:
         try:
             d = feedparser.parse(url)
         except Exception as e:
-            print(f"  · RSS 실패 {name}: {e}", flush=True)
+            print(f"  · RSS 실패 {source}/{category}: {e}", flush=True)
             continue
         for e in d.entries[:per_category]:
             out.append(Article(
-                category=name,
+                category=category,
+                source=source,
                 title=getattr(e, "title", "").strip(),
                 summary=getattr(e, "summary", "").strip(),
                 link=getattr(e, "link", ""),
@@ -59,11 +88,9 @@ def fetch_all(per_category: int = 6) -> list[Article]:
     return out
 
 if __name__ == "__main__":
-    import json
     arts = fetch_all(per_category=2)
-    print(f"fetched {len(arts)} articles from {len(FEEDS_META)} feeds")
-    by_cat: dict[str, int] = {}
-    for a in arts:
-        by_cat[a.category] = by_cat.get(a.category, 0) + 1
-    for cat, n in by_cat.items():
-        print(f"  {cat:18s} {n}")
+    print(f"fetched {len(arts)} articles from {len(FEEDS)} feeds")
+    from collections import Counter
+    src_count = Counter((a.category, a.source) for a in arts)
+    for (cat, src), n in sorted(src_count.items()):
+        print(f"  {cat:18s} {src:14s} {n}")

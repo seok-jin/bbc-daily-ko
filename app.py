@@ -194,11 +194,13 @@ def render_article_card(it: dict, idx: int, cat: str):
 
     title_prefix = "✓ " if read else ""
     star_prefix = "⭐ " if starred else ""
+    source = it.get("source", "BBC")
+    src_badge = f"<span style='background:#eef; color:#557; padding:2px 8px; border-radius:10px; font-size:0.75em; margin-left:8px; vertical-align:middle'>{source}</span>"
     title_style = f"<span style='color:#999'>{title_prefix}{star_prefix}{idx}. {it['ko_title']}</span>" if read else None
     if title_style:
-        st.markdown(f"#### {title_style}", unsafe_allow_html=True)
+        st.markdown(f"#### {title_style} {src_badge}", unsafe_allow_html=True)
     else:
-        st.subheader(f"{star_prefix}{idx}. {it['ko_title']}")
+        st.markdown(f"### {star_prefix}{idx}. {it['ko_title']} {src_badge}", unsafe_allow_html=True)
 
     if not read:
         for line in it["ko_summary"].split("\n"):
