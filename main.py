@@ -24,6 +24,7 @@ try:
 except ImportError:
     pass
 
+import os
 from fetch import fetch_all, Article
 from summarize import summarize_all
 from render import render
@@ -157,6 +158,30 @@ def main() -> int:
     json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"      → {md_path}", flush=True)
     print(f"      → {json_path} (총 {len(merged)}건, 신규 {len(new_items)}건)", flush=True)
+
+    # ── 키워드 매칭 알림 (quiet hours 무시) ──
+    kw_raw = os.environ.get("WATCHED_KEYWORDS", "").strip()
+    if kw_raw and new_items and not args.no_push:
+        kws = [k.strip() for k in kw_raw.split(",") if k.strip()]
+        matches = []
+        for it in new_items:
+            text = " ".join([it.get("ko_title",""), it.get("ko_summary",""), it.get("title","")]).lower()
+            hits = [k for k in kws if k.lower() in text]
+            if hits:
+                it_copy = {**it, "_hits": hits}
+                matches.append(it_copy)
+        if matches:
+            import state as _state
+            from translate import link_hash as _lh
+            from push import push_keyword_alert
+            unnotified = [m for m in matches if not _state.already_notified(_lh(m["link"]))]
+            if unnotified:
+                try:
+                    push_keyword_alert(unnotified, today)
+                    _state.mark_notified([_lh(m["link"]) for m in unnotified])
+                    print(f"      · 🔔 키워드 알림 {len(unnotified)}건 발송", flush=True)
+                except Exception as e:
+                    print(f"      ! 키워드 알림 실패: {e}", flush=True)
 
     if not args.no_push:
         print("[+] 푸시...", flush=True)
