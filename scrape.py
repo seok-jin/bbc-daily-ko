@@ -1,39 +1,70 @@
-"""BBC 기사 URL → 본문 텍스트 추출."""
+"""기사 URL → 본문 텍스트 추출 (다중 매체 대응).
+
+전략:
+  1. trafilatura — BBC/Guardian/TechCrunch/Verge/Ars/Al Jazeera 등 폭넓게 지원
+  2. fallback: requests + BeautifulSoup으로 <article>/<main>/<p> 추출
+"""
 from __future__ import annotations
 import requests
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
+import trafilatura
 
-UA = "Mozilla/5.0 (compatible; BBC-Daily-Reader/1.0; personal use)"
+UA = "Mozilla/5.0 (compatible; WorldDailyKO/1.0; personal use)"
 TIMEOUT = 15
 MAX_WORKERS = 8
 
+def _bs_fallback(html: str) -> str | None:
+    """trafilatura가 빈 결과면 휴리스틱 fallback."""
+    soup = BeautifulSoup(html, "lxml")
+    # 1) <article> > 모든 <p>
+    for art in soup.find_all("article"):
+        paras = [p.get_text(strip=True) for p in art.find_all("p")]
+        text = "\n\n".join(p for p in paras if len(p) > 30)
+        if len(text) > 200:
+            return text
+    # 2) <main> > 모든 <p>
+    main = soup.find("main")
+    if main:
+        paras = [p.get_text(strip=True) for p in main.find_all("p")]
+        text = "\n\n".join(p for p in paras if len(p) > 30)
+        if len(text) > 200:
+            return text
+    # 3) 마지막: body의 모든 <p> 중 30자 이상
+    paras = [p.get_text(strip=True) for p in soup.find_all("p")]
+    text = "\n\n".join(p for p in paras if len(p) > 50)
+    if len(text) > 300:
+        return text
+    return None
+
 def scrape_one(url: str) -> str:
+    # 1차: trafilatura (HTML 자체 fetch 포함)
+    try:
+        downloaded = trafilatura.fetch_url(url)
+        if downloaded:
+            text = trafilatura.extract(
+                downloaded,
+                include_comments=False,
+                include_tables=False,
+                favor_precision=True,
+                no_fallback=False,
+            )
+            if text and len(text) > 200:
+                return text[:8000]
+    except Exception as e:
+        print(f"  · trafilatura 오류 ({url[:60]}): {e}", flush=True)
+
+    # 2차: requests + BS4 휴리스틱
     try:
         r = requests.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT)
         r.raise_for_status()
+        text = _bs_fallback(r.text)
+        if text:
+            return text[:8000]
     except Exception as e:
         return f"(본문 조회 실패: {e})"
 
-    soup = BeautifulSoup(r.text, "lxml")
-    # BBC article body: <article> 안의 data-component="text-block" div들
-    article = soup.find("article")
-    if not article:
-        return "(본문 영역을 찾지 못함)"
-    blocks = article.find_all("div", attrs={"data-component": "text-block"})
-    if not blocks:
-        # fallback: 모든 p 태그
-        blocks = [article]
-    paras: list[str] = []
-    for b in blocks:
-        for p in b.find_all("p"):
-            t = p.get_text(strip=True)
-            if t:
-                paras.append(t)
-    if not paras:
-        return "(본문 텍스트 없음)"
-    body = "\n\n".join(paras)
-    return body[:8000]  # 토큰 비용 제어
+    return "(본문 영역을 찾지 못함)"
 
 def scrape_many(urls: list[str]) -> list[str]:
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
@@ -41,5 +72,11 @@ def scrape_many(urls: list[str]) -> list[str]:
 
 if __name__ == "__main__":
     import sys
-    url = sys.argv[1] if len(sys.argv) > 1 else "https://www.bbc.com/news/articles/c626xjq0q0vo"
-    print(scrape_one(url)[:1000])
+    urls = sys.argv[1:] or [
+        "https://www.bbc.com/news/articles/c626xjq0q0vo",
+        "https://techcrunch.com/2026/05/11/riding-an-ai-rally-robinhood-preps-second-retail-venture-ipo/",
+        "https://www.theverge.com/2026/05/10/openai-mythos",
+    ]
+    for u in urls:
+        print(f"\n=== {u} ===")
+        print(scrape_one(u)[:600])
