@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
@@ -118,8 +119,8 @@ with st.sidebar:
     search_q = st.text_input("🔍 검색", placeholder="제목/요약 키워드", key="search_q").strip()
 
     # ── 읽은 글 숨김 ──
-    hide_read = st.checkbox("✓ 읽은 글 숨기기", value=False, key="hide_read",
-                            help="OFF: 읽음 표시한 글도 회색으로 표시  ·  ON: 읽음 표시한 글 숨김")
+    hide_read = st.checkbox("✓ 읽은 글 숨기기", value=True, key="hide_read",
+                            help="ON: 읽음 표시한 글 숨김 (기본)  ·  OFF: 회색으로 하단에 정렬되어 표시")
 
     # ── 키워드 알림 상태 ──
     wk = os.environ.get("WATCHED_KEYWORDS", "").strip()
@@ -205,12 +206,22 @@ def render_article_card(it: dict, idx: int, cat: str):
     else:
         st.markdown(f"### {star_prefix}{idx}. {it['ko_title']} {src_badge}", unsafe_allow_html=True)
 
+    pub = _format_published(it.get("published", ""))
     if not read:
         for line in it["ko_summary"].split("\n"):
             line = line.strip().lstrip("-•·").strip()
             if line:
                 st.markdown(f"- {line}")
-        st.caption(f"_원문 제목: {it['title']}_")
+        # 메타: 발행일 · 원문 제목
+        meta_bits = []
+        if pub:
+            meta_bits.append(f"🕒 {pub}")
+        meta_bits.append(f"_원문 제목: {it['title']}_")
+        st.caption("  ·  ".join(meta_bits))
+    else:
+        # 읽은 글: 발행일만 짧게
+        if pub:
+            st.caption(f"🕒 {pub}  ·  _읽음 처리됨_")
 
     btn_key = f"act_{cat}_{idx}_{h}"
     trans_state_key = f"shown_{btn_key}"
@@ -249,10 +260,43 @@ def render_article_card(it: dict, idx: int, cat: str):
 
     st.divider()
 
-def _filter_read(items: list[dict]) -> list[dict]:
-    if not st.session_state.get("hide_read", False):
-        return items
-    return [it for it in items if not state.is_read(link_hash(it["link"]))]
+def _arrange(items: list[dict]) -> list[dict]:
+    """hide_read ON → 읽음 글 제거 / OFF → 읽음 글은 하단으로."""
+    if st.session_state.get("hide_read", True):
+        return [it for it in items if not state.is_read(link_hash(it["link"]))]
+    unread, read = [], []
+    for it in items:
+        (read if state.is_read(link_hash(it["link"])) else unread).append(it)
+    return unread + read
+
+def _format_published(s: str) -> str:
+    """RSS 'published' 문자열 → 한국어 상대시간 / 절대시간."""
+    if not s:
+        return ""
+    try:
+        dt = parsedate_to_datetime(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_kst = dt.astimezone(KST)
+        now = datetime.now(KST)
+        delta = now - dt_kst
+        secs = int(delta.total_seconds())
+        if secs < 60:
+            return "방금 전"
+        if secs < 3600:
+            return f"{secs // 60}분 전"
+        if secs < 86400:
+            return f"{secs // 3600}시간 전"
+        if delta.days == 1:
+            return "어제"
+        if delta.days < 7:
+            return f"{delta.days}일 전"
+        # 1주 이상은 절대 날짜
+        if dt_kst.year == now.year:
+            return dt_kst.strftime("%m월 %d일")
+        return dt_kst.strftime("%Y-%m-%d")
+    except Exception:
+        return s[:25]
 
 # ── 검색 모드 ──
 if search_q:
@@ -262,7 +306,7 @@ if search_q:
         it for it in pool
         if q in (it.get("ko_title","") + it.get("ko_summary","") + it.get("title","")).lower()
     ]
-    hits = _filter_read(hits)
+    hits = _arrange(hits)
     st.subheader(f"🔍 검색 결과: '{search_q}' — {len(hits)}건")
     if not hits:
         st.info("일치하는 기사가 없습니다.")
@@ -314,9 +358,11 @@ if not cat_order:
 tab_labels = []
 visible_by_cat: dict[str, list[dict]] = {}
 for c in cat_order:
-    filt = _filter_read(by_cat[c])
-    visible_by_cat[c] = filt
-    tab_labels.append(f"{CAT_LABEL[c]} ({len(filt)}/{len(by_cat[c])})")
+    arranged = _arrange(by_cat[c])
+    visible_by_cat[c] = arranged
+    # 탭 카운트: 읽지 않은 / 전체
+    unread_n = sum(1 for it in by_cat[c] if not state.is_read(link_hash(it["link"])))
+    tab_labels.append(f"{CAT_LABEL[c]} ({unread_n}/{len(by_cat[c])})")
 
 tabs = st.tabs(tab_labels)
 
