@@ -222,6 +222,12 @@ def render_article_card(it: dict, idx: int, cat: str):
     read = state.is_read(h)
     starred = state.is_starred(h)
 
+    # hide_read ON + read 상태 → 빈 fragment 로 카드 + divider 즉시 비표시
+    # (st.tabs 가 풀 리런 시 리셋되는 이슈로 fragment scope 만 사용 가능 → 이 방식이 최선)
+    # 다음 페이지 갱신/탭 전환/필터 변경 시 _arrange() 가 정렬·필터링 재계산
+    if read and st.session_state.get("hide_read", True):
+        return
+
     title_prefix = "✓ " if read else ""
     star_prefix = "⭐ " if starred else ""
     source = it.get("source", "BBC")
