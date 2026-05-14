@@ -28,6 +28,10 @@ def link_hash(url: str) -> str:
 def _cache_path(url: str) -> Path:
     return CACHE_DIR / f"{link_hash(url)}.md"
 
+def is_cached(url: str) -> bool:
+    """이 URL의 한국어 번역이 이미 캐시되어 있나?"""
+    return _cache_path(url).exists()
+
 def translate_article(url: str, title: str, force: bool = False) -> tuple[str, bool]:
     """본문 번역 결과 + 캐시 히트 여부."""
     cp = _cache_path(url)

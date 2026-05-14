@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 PROJECT_DIR = Path(__file__).parent
 load_dotenv(PROJECT_DIR / ".env")
 
-from translate import translate_article, link_hash
+from translate import translate_article, link_hash, is_cached
 from fetch import CATEGORIES
 import state
 
@@ -225,12 +225,19 @@ def render_article_card(it: dict, idx: int, cat: str):
     title_prefix = "✓ " if read else ""
     star_prefix = "⭐ " if starred else ""
     source = it.get("source", "BBC")
+    cached = is_cached(url)
     src_badge = f"<span style='background:#eef; color:#557; padding:2px 8px; border-radius:10px; font-size:0.75em; margin-left:8px; vertical-align:middle'>{source}</span>"
+    cache_badge = (
+        f"<span style='background:#e8f5e9; color:#2e7d32; padding:2px 8px; "
+        f"border-radius:10px; font-size:0.75em; margin-left:6px; vertical-align:middle' "
+        f"title='한글 본문 번역 캐시 있음 — 클릭 시 즉시 표시'>💾 번역됨</span>"
+        if cached else ""
+    )
     title_style = f"<span style='color:#999'>{title_prefix}{star_prefix}{idx}. {it['ko_title']}</span>" if read else None
     if title_style:
-        st.markdown(f"#### {title_style} {src_badge}", unsafe_allow_html=True)
+        st.markdown(f"#### {title_style} {src_badge}{cache_badge}", unsafe_allow_html=True)
     else:
-        st.markdown(f"### {star_prefix}{idx}. {it['ko_title']} {src_badge}", unsafe_allow_html=True)
+        st.markdown(f"### {star_prefix}{idx}. {it['ko_title']} {src_badge}{cache_badge}", unsafe_allow_html=True)
 
     pub = _format_published(it.get("published", ""))
     if not read:
@@ -253,7 +260,12 @@ def render_article_card(it: dict, idx: int, cat: str):
     trans_state_key = f"shown_{btn_key}"
 
     shown = st.session_state.get(trans_state_key, False)
-    trans_label = "📕 한글 본문 닫기" if shown else "📖 한글 본문 번역"
+    if shown:
+        trans_label = "📕 한글 본문 닫기"
+    elif cached:
+        trans_label = "💾 한글 본문 보기"  # 즉시 로드됨
+    else:
+        trans_label = "📖 한글 본문 번역"   # gemini 호출 (~1분)
     read_label = "↺ 안 읽음" if read else "✓ 읽음"
     star_label = "⭐ 해제" if starred else "☆ 저장"
 
